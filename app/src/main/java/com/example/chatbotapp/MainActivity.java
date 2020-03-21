@@ -19,18 +19,25 @@ import java.util.Arrays;
 public class MainActivity extends AppCompatActivity {
 
     TextView statusText;
+    TextView messageText;
     BroadcastReceiver broadcastReceiver;
     SmsManager smsManager;
     String senderNumber = "";
     int currentState = 0;
     boolean requestingToppings = false;
     boolean requestingBeverages = false;
+    boolean receivedOrder = false;
+    boolean requestingConfirmation = false;
+    String currentOrder = "";
+    String sizePizza = "";
+    double totalCost = 0.0;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
         statusText = findViewById(R.id.id_statusText);
+        messageText = findViewById(R.id.id_messageText);
 
     }
 
@@ -62,7 +69,7 @@ public class MainActivity extends AppCompatActivity {
                 smsArr[i]  = SmsMessage.createFromPdu((byte[])objectArr[i], format);
             }
 
-            statusText.setText(smsArr[0].getMessageBody());
+            messageText.setText(smsArr[0].getMessageBody());
             senderNumber = smsArr[0].getOriginatingAddress();
 
             Handler handler = new Handler();
@@ -96,7 +103,7 @@ public class MainActivity extends AppCompatActivity {
                     statusText.setText("Informational State");
                     if(checkForWord(receivedMessage, "what") || checkForWord(receivedMessage, "cost") || checkForWord(receivedMessage, "price")){
                         sendMessage = "Here's a quick look at our menu. We sell small, large, and medium pizzas at $9, $12, and $15 respectively." +
-                                "Each topping is $0.50 extra and we sell small, medium, and large drinks at $1.50, $2.50, and $3.50 respectively";
+                                "Each topping is $0.50 extra and we sell drinks for $1.50 each";
                     }
                     else if(checkForWord(receivedMessage, "topping")||checkForWord(receivedMessage, "toppings")){
                         sendMessage = "Here is a list of all our toppings: Pepperoni,Pineapple, Olives, Chicken, Anchovies, and Peppers. Did you need anything else?";
@@ -117,6 +124,10 @@ public class MainActivity extends AppCompatActivity {
                 }
                 else if(currentState == 2){
                     statusText.setText("Order State");
+                    if(!receivedOrder){
+                        currentOrder = receivedMessage;
+                        receivedOrder = false;
+                    }
                     ArrayList<String> beverageList = addBeverages(receivedMessage);
                     ArrayList<String> toppingList = addToppings(receivedMessage);
                     if(beverageList.size() == 0){
@@ -132,7 +143,8 @@ public class MainActivity extends AppCompatActivity {
                             sendMessage = "Please list any toppings you would like";
                         }
                         else{
-                            sendMessage = "That's perfectly fine! Is your order complete";
+                            requestingToppings = false;
+                            sendMessage = "That's perfectly fine! Is your order complete?";
                         }
                     }
                     else if(requestingBeverages){
@@ -140,18 +152,69 @@ public class MainActivity extends AppCompatActivity {
                             sendMessage = "Please list any beverages you would like";
                         }
                         else{
-                            sendMessage = "That's perfectly fine! Is your order complete";
+                            requestingBeverages = false;
+                            sendMessage = "That's perfectly fine! Is your order complete?";
+                            requestingConfirmation = true;
+                        }
+                    }
+                    if(sizePizza.equals("")){
+                        if(checkForWord(receivedMessage, "large")){
+                            sizePizza = "large";
+                            totalCost = 15.0;
+                        }
+                        else if(checkForWord(receivedMessage, "medium")){
+                            sizePizza = "medium";
+                            totalCost = 12.0;
+                        }
+                        else if(checkForWord(receivedMessage, "small")){
+                            sizePizza = "small";
+                            totalCost = 9.0;
+                        }
+                        else{
+                            sendMessage = "Please specify the size of the pizza you are ordering";
+                        }
+                    }
+                    if(requestingConfirmation){
+                        if(checkForWord(receivedMessage, "yes") || checkForWord(receivedMessage, "yeah")){
+                            sendMessage = "You have ordered a large pizza with ";
+                            for(int i = 0; i < toppingList.size(); i++){
+                                sendMessage+= toppingList.get(i) + ", ";
+                            }
+                            if(toppingList.size() == 0){
+                                sendMessage+= " nothing on top";
+                            }
+                            sendMessage += ". You have also ordered ";
+                            for(int i = 0; i < beverageList.size(); i++){
+                                sendMessage+= beverageList.get(i) + ", ";
+                            }
+                            if(beverageList.size() == 0){
+                                sendMessage+= " no beverages";
+                            }
+                            totalCost+= 0.5*toppingList.size() + 1.5*beverageList.size();
+                            sendMessage += ". Your total cost will be $" + totalCost + "0. Will that be all?";
+                            requestingConfirmation = false;
+                            currentState = 3;
                         }
                     }
                 }
                 else if(currentState == 3){
                     statusText.setText("Farewell State");
+                    if(checkForWord(receivedMessage, "yes") || checkForWord(receivedMessage, "yeah")){
+                        sendMessage = "Ok then. Goodbye!";
+                        currentState = 4;
+                    }
+                    else if(checkForWord(receivedMessage, "no")){
+                        currentState = 2;
+                        sendMessage = "I am redirecting you to information about Dave's Pizzeria and our menu";
+                    }
+                    else{
+                        sendMessage = "Interesting. But please answer my question!";
+                    }
                 }
                 smsManager = SmsManager.getDefault();
                 smsManager.sendTextMessage(senderNumber, null, sendMessage, null, null);
             }
         };
-
         return runnable;
     }
 
